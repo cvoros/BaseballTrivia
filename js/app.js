@@ -1,0 +1,469 @@
+import * as E from './engine.js';
+import * as MLB from './mlb.js';
+import { findMatch } from './fuzzy.js';
+import { LocalStore, OnlineStore, onlineEnabled, newGameCode, myIdentity, saveIdentity } from './store.js';
+
+// --- App state --------------------------------------------------------------
+
+let G = null;              // current game object
+let gameCode = null;       // online game code (null for local)
+let myIdx = null;          // my player index online (null for local hot-seat)
+let unsubscribe = null;
+let teams = null;          // [{id, name, teamName}] sorted by id
+let teamById = {};
+let handoffDone = null;    // half key confirmed via handoff screen (local mode)
+let timerHandle = null;
+let pendingMode = null;    // which mode the names screen is collecting for
+
+const SEASON = (() => {
+  const now = new Date();
+  // Before April, last year's rosters are the most recent meaningful ones.
+  return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+})();
+
+const $ = id => document.getElementById(id);
+const screens = ['screen-home', 'screen-names', 'screen-lobby', 'screen-game'];
+
+function show(id) {
+  for (const s of screens) $(s).classList.toggle('hidden', s !== id);
+  window.scrollTo(0, 0);
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s ?? '';
+  return d.innerHTML;
+}
+
+async function ensureTeams() {
+  if (!teams) {
+    teams = await MLB.getTeams(SEASON);
+    teamById = Object.fromEntries(teams.map(t => [t.id, t]));
+  }
+  return teams;
+}
+
+function stopTimer() {
+  if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
+}
+
+function save() {
+  if (G.mode === 'online') return OnlineStore.save(gameCode, G);
+  LocalStore.save(G);
+}
+
+// --- Home / setup flow --------------------------------------------------------
+
+function initHome() {
+  $('btn-local').onclick = () => showNames('local');
+  $('btn-create').onclick = () => showNames('online-create');
+  $('btn-join').onclick = () => {
+    const code = $('join-code').value.trim().toUpperCase();
+    if (code.length === 6) joinFlow(code);
+  };
+  if (!onlineEnabled) {
+    $('btn-create').disabled = true;
+    $('btn-join').disabled = true;
+    $('online-hint').classList.remove('hidden');
+  }
+  const resumable = LocalStore.load();
+  if (resumable && resumable.status !== 'final') {
+    $('btn-resume').classList.remove('hidden');
+    $('btn-resume').textContent = `Resume: ${resumable.players[0].name} vs ${resumable.players[1].name} →`;
+    $('btn-resume').onclick = () => resumeLocal(resumable);
+  }
+  document.querySelectorAll('.btn-home').forEach(b => (b.onclick = goHome));
+}
+
+function goHome() {
+  stopTimer();
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  G = null; gameCode = null; myIdx = null; handoffDone = null;
+  history.replaceState(null, '', location.pathname);
+  initHome();
+  show('screen-home');
+}
+
+function showNames(mode, prefillCode) {
+  pendingMode = mode;
+  const two = mode === 'local';
+  $('name2-label').classList.toggle('hidden', !two);
+  $('names-title').textContent =
+    mode === 'local' ? "Who's playing?" :
+    mode === 'online-create' ? 'Your name?' : `Joining game ${prefillCode} — your name?`;
+  $('names-error').classList.add('hidden');
+  $('btn-start').onclick = () => startFromNames(prefillCode);
+  show('screen-names');
+  $('name1').focus();
+}
+
+async function startFromNames(joinCode) {
+  const n1 = $('name1').value.trim();
+  const n2 = $('name2').value.trim();
+  const fail = msg => { $('names-error').textContent = msg; $('names-error').classList.remove('hidden'); };
+  if (!n1) return fail('Enter a name.');
+  try {
+    if (pendingMode === 'local') {
+      if (!n2) return fail('Enter both names.');
+      G = E.newGame({ mode: 'local', names: [n1, n2], season: SEASON });
+      gameCode = null; myIdx = null; handoffDone = null;
+      LocalStore.save(G);
+      enterGame();
+    } else if (pendingMode === 'online-create') {
+      $('btn-start').disabled = true;
+      G = E.newGame({ mode: 'online', names: [n1, ''], season: SEASON });
+      G.status = 'lobby';
+      gameCode = newGameCode();
+      myIdx = 0;
+      await OnlineStore.create(gameCode, G);
+      saveIdentity(gameCode, 0);
+      history.replaceState(null, '', `?game=${gameCode}`);
+      showLobby();
+      await subscribeOnline();
+    } else { // online-join
+      $('btn-start').disabled = true;
+      G = await OnlineStore.join(joinCode, n1);
+      gameCode = joinCode;
+      myIdx = 1;
+      saveIdentity(joinCode, 1);
+      history.replaceState(null, '', `?game=${joinCode}`);
+      await subscribeOnline();
+      enterGame();
+    }
+  } catch (err) {
+    fail(err.message || 'Something went wrong.');
+  } finally {
+    $('btn-start').disabled = false;
+  }
+}
+
+function showLobby() {
+  $('lobby-code').textContent = gameCode;
+  const link = `${location.origin}${location.pathname}?game=${gameCode}`;
+  $('lobby-link').value = link;
+  $('btn-copy-link').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      $('btn-copy-link').textContent = 'Copied!';
+      setTimeout(() => ($('btn-copy-link').textContent = 'Copy Link'), 1500);
+    } catch {
+      $('lobby-link').select();
+    }
+  };
+  show('screen-lobby');
+}
+
+async function joinFlow(code) {
+  const id = myIdentity(code);
+  if (id) {
+    // Returning player on this browser: just reconnect.
+    gameCode = code;
+    myIdx = id.playerIdx;
+    const game = await OnlineStore.load(code);
+    if (!game) return alert('No game found with that code.');
+    G = game;
+    await subscribeOnline();
+    if (G.status === 'lobby') showLobby(); else enterGame();
+  } else {
+    showNames('online-join', code);
+  }
+}
+
+async function subscribeOnline() {
+  if (unsubscribe) unsubscribe();
+  unsubscribe = await OnlineStore.subscribe(gameCode, remote => {
+    const changed = JSON.stringify(remote) !== JSON.stringify(G);
+    if (!changed) return;
+    const wasLobby = G?.status === 'lobby';
+    G = remote;
+    if (wasLobby && G.status !== 'lobby') enterGame();
+    else if (!$('screen-game').classList.contains('hidden')) renderGame();
+    else if (G.status !== 'lobby') enterGame();
+  });
+}
+
+function resumeLocal(game) {
+  G = game;
+  gameCode = null; myIdx = null;
+  // Require a fresh handoff confirmation so nobody resumes mid-question unseen.
+  handoffDone = null;
+  enterGame();
+}
+
+function enterGame() {
+  show('screen-game');
+  renderGame();
+}
+
+// --- Rendering ----------------------------------------------------------------
+
+function renderGame() {
+  stopTimer();
+  renderScoreboard();
+  ensureTeams().then(() => {
+    if (G.status === 'final') renderFinal();
+    else renderActive();
+    renderReplays();
+  }).catch(err => {
+    $('game-content').innerHTML =
+      `<div class="card center"><p class="error">Couldn't reach the MLB Stats API: ${esc(err.message)}</p>
+       <button class="big-btn slim" onclick="location.reload()">Retry</button></div>`;
+  });
+}
+
+function renderScoreboard() {
+  const away = G.players[G.awayIdx];
+  const home = G.players[1 - G.awayIdx];
+  const ls = E.lineScore(G);
+  const battingSide = G.current?.half === 'top' ? 'away' : 'home';
+  const active = G.status === 'active';
+
+  const inningCells = side =>
+    ls.innings.map(i => `<td>${esc(String(i[side]).replace('*', ''))}${String(i[side]).includes('*') ? '<span class="at-bat-marker">▸</span>' : ''}</td>`).join('');
+
+  let statusLine = '';
+  if (active) {
+    const cur = G.current;
+    const batter = G.players[E.batterIdx(G)];
+    const outsDots = '●'.repeat(cur.outs) + '○'.repeat(E.MAX_OUTS - cur.outs);
+    statusLine = `<div class="board-status">${cur.half === 'top' ? 'TOP' : 'BOT'} ${cur.inning} · AT BAT: ${esc(batter.name)} · OUTS <span class="outs">${outsDots}</span></div>`;
+  } else if (G.status === 'lobby') {
+    statusLine = `<div class="board-status">WAITING FOR OPPONENT</div>`;
+  } else {
+    statusLine = `<div class="board-status">FINAL${ls.innings.length > E.REG_INNINGS ? '/' + ls.innings.length : ''}</div>`;
+  }
+
+  $('scoreboard').innerHTML = `
+    <table>
+      <tr><th></th>${ls.innings.map(i => `<th>${i.inning}</th>`).join('')}<th>R</th></tr>
+      <tr><td class="team">${active && battingSide === 'away' ? '▸ ' : ''}${esc(away.name || '—')}</td>${inningCells('away')}<td class="total">${ls.away}</td></tr>
+      <tr><td class="team">${active && battingSide === 'home' ? '▸ ' : ''}${esc(home.name || '—')}</td>${inningCells('home')}<td class="total">${ls.home}</td></tr>
+    </table>
+    ${statusLine}`;
+}
+
+function renderActive() {
+  const batter = E.batterIdx(G);
+  const hk = E.halfKey(G.current.inning, G.current.half);
+
+  if (G.mode === 'online') {
+    if (batter === myIdx) renderQuestion();
+    else renderWaiting();
+    return;
+  }
+  // Hot-seat: require an explicit handoff tap at the start of each half.
+  if (handoffDone === hk) renderQuestion();
+  else renderHandoff(hk);
+}
+
+function renderHandoff(hk) {
+  const batter = G.players[E.batterIdx(G)];
+  const half = G.current.half === 'top' ? 'Top' : 'Bottom';
+  $('game-content').innerHTML = `
+    <div class="card handoff">
+      <h2>${half} of inning ${G.current.inning}</h2>
+      <p><strong>${esc(batter.name)}</strong>, you're up!<br>
+      Other player: no peeking — same teams both halves. 👀</p>
+      <button class="big-btn" id="btn-handoff">I'm ${esc(batter.name)} — Play Ball</button>
+    </div>`;
+  $('btn-handoff').onclick = () => { handoffDone = hk; renderGame(); };
+}
+
+function renderWaiting() {
+  const opp = G.players[E.batterIdx(G)];
+  $('game-content').innerHTML = `
+    <div class="card handoff">
+      <h2>${esc(opp.name)} is at bat<span class="dots"></span></h2>
+      <p>This page updates automatically when it's your turn.<br>
+      Come back whenever — the game keeps.</p>
+    </div>`;
+}
+
+async function renderQuestion() {
+  const q = E.currentQuestion(G, teams.map(t => t.id));
+  const team = teamById[q.teamId];
+  const cur = G.current;
+
+  $('game-content').innerHTML = `
+    <div class="card question-card">
+      <div class="q-progress">${E.POSITIONS.map((p, i) =>
+        `<div class="pos-dot ${i < cur.posIdx ? 'done' : i === cur.posIdx ? 'now' : ''}">${p}</div>`).join('')}
+      </div>
+      <div class="q-team">
+        <img src="${MLB.teamLogoUrl(q.teamId)}" alt="" onerror="this.style.display='none'">
+        <span class="team-name">${esc(team.name)}</span>
+      </div>
+      <div class="q-pos">${E.POSITION_NAMES[q.pos]} (${q.pos})</div>
+      <div class="q-hint">${E.POSITION_HINTS[q.pos]}</div>
+      <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
+      <div class="answer-row">
+        <input id="answer" type="text" placeholder="Player name…" autocomplete="off" autocorrect="off" spellcheck="false">
+        <button class="big-btn slim" id="btn-answer">Swing</button>
+      </div>
+    </div>`;
+
+  const input = $('answer');
+  input.focus();
+
+  // Fetch the roster while the player reads the question.
+  let roster;
+  try {
+    roster = await MLB.getRoster(q.teamId, G.season);
+  } catch (err) {
+    $('game-content').querySelector('.card').innerHTML =
+      `<p class="error">Couldn't load the ${esc(team.name)} roster: ${esc(err.message)}</p>
+       <button class="big-btn slim" onclick="location.reload()">Retry</button>`;
+    return;
+  }
+  const eligible = MLB.eligiblePlayers(roster, q.pos);
+
+  // Timer starts once the roster is ready (so slow networks don't eat clock).
+  const deadline = Date.now() + E.TIMER_SECONDS * 1000;
+  const bar = $('timer-bar');
+  stopTimer();
+  timerHandle = setInterval(() => {
+    const left = deadline - Date.now();
+    const frac = Math.max(0, left / (E.TIMER_SECONDS * 1000));
+    bar.style.width = `${frac * 100}%`;
+    bar.className = 'timer-bar' + (frac < 0.2 ? ' danger' : frac < 0.5 ? ' warn' : '');
+    if (left <= 0) {
+      stopTimer();
+      settle({ guess: input.value.trim(), timedOut: true });
+    }
+  }, 100);
+
+  const submit = () => {
+    const guess = input.value.trim();
+    if (!guess) return;
+    stopTimer();
+    settle({ guess, timedOut: false });
+  };
+  $('btn-answer').onclick = submit;
+  input.onkeydown = e => { if (e.key === 'Enter') submit(); };
+
+  function settle({ guess, timedOut }) {
+    const match = !timedOut && guess ? findMatch(guess, eligible) : null;
+    const result = {
+      teamId: q.teamId, pos: q.pos, guess: guess || '',
+      correct: !!match, matchedName: match ? match.fullName : null, timedOut,
+    };
+    E.applyResult(G, result);
+    save();
+    showFeedback(result, team, eligible);
+  }
+}
+
+function showFeedback(result, team, eligible) {
+  renderScoreboard();
+  let html = '';
+  if (result.correct) {
+    const completedPass = result.pos === 'RF';
+    html = `<div class="feedback good">
+      <div class="verdict">✓ ${esc(result.matchedName)}</div>
+      ${completedPass ? '<div class="run-banner">🏃 RUN SCORES! Around the horn — all 9!</div>' : ''}
+      <div class="detail">${esc(result.guess)} — safe!</div>
+    </div>`;
+  } else {
+    const answers = eligible.map(p => p.fullName);
+    const shown = answers.slice(0, 6);
+    html = `<div class="feedback bad">
+      <div class="verdict">${result.timedOut ? '⏰ Called out on strikes!' : '✗ Out!'}</div>
+      <div class="detail">${result.timedOut ? 'Time expired.' : `"${esc(result.guess)}" isn't on the ${esc(team.name)} at ${result.pos}.`}</div>
+      <div class="detail">You could've said: ${shown.map(esc).join(', ')}${answers.length > shown.length ? '…' : ''}</div>
+    </div>`;
+  }
+
+  const nextLabel =
+    G.status === 'final' ? 'See Final' :
+    G.mode === 'online' && E.batterIdx(G) !== myIdx ? 'End of my half' : 'Next';
+
+  $('game-content').innerHTML = `<div class="card">${html}
+    <button class="big-btn" id="btn-next">${nextLabel} →</button></div>`;
+  $('btn-next').onclick = () => renderGame();
+}
+
+function renderFinal() {
+  const w = E.winnerIdx(G);
+  const ls = E.lineScore(G);
+  const loserIdx = w === null ? null : 1 - w;
+  $('game-content').innerHTML = `
+    <div class="card final-banner">
+      <div class="trophy">🏆</div>
+      <h2>${w === null ? 'It’s a tie?!' : esc(G.players[w].name) + ' wins!'}</h2>
+      <p>Final: ${esc(G.players[G.awayIdx].name)} ${ls.away}, ${esc(G.players[1 - G.awayIdx].name)} ${ls.home}${ls.innings.length > E.REG_INNINGS ? ` (${ls.innings.length} innings)` : ''}</p>
+      ${w !== null ? `<p>Tough one, ${esc(G.players[loserIdx].name)}. Rematch?</p>` : ''}
+      <button class="big-btn" id="btn-rematch">Play Again</button>
+    </div>`;
+  $('btn-rematch').onclick = () => {
+    if (G.mode === 'local') {
+      const names = [G.players[0].name, G.players[1].name];
+      G = E.newGame({ mode: 'local', names, season: SEASON });
+      handoffDone = null;
+      LocalStore.save(G);
+      renderGame();
+    } else {
+      goHome();
+      showNames('online-create');
+    }
+  };
+}
+
+// Show play-by-play for halves the viewer is allowed to see:
+// your own halves anytime; opponent's half of inning N only once your half of
+// inning N is done (mirrored teams would leak answers otherwise). In local
+// mode, only fully completed innings (plus everything once final).
+function canViewHalf(inning, half) {
+  if (G.status === 'final') return true;
+  const hk = E.halfKey(inning, half);
+  const h = G.halves[hk];
+  if (!h) return false;
+  const halfBatter = half === 'top' ? G.awayIdx : 1 - G.awayIdx;
+  const otherKey = E.halfKey(inning, half === 'top' ? 'bottom' : 'top');
+  const bothDone = h.done && G.halves[otherKey]?.done;
+  if (G.mode === 'local') return bothDone;
+  if (halfBatter === myIdx) return true;
+  return bothDone || (G.halves[otherKey]?.done ?? false);
+}
+
+function renderReplays() {
+  const parts = [];
+  const innings = [...new Set(Object.keys(G.halves).map(k => parseInt(k, 10)))].sort((a, b) => a - b);
+  for (const inning of innings) {
+    for (const half of ['top', 'bottom']) {
+      const hk = E.halfKey(inning, half);
+      const h = G.halves[hk];
+      if (!h || !h.events.length || !canViewHalf(inning, half)) continue;
+      const batter = G.players[half === 'top' ? G.awayIdx : 1 - G.awayIdx];
+      const rows = [];
+      let lastPass = -1;
+      let okInPass = 0;
+      for (const ev of h.events) {
+        if (ev.passIdx !== lastPass) { lastPass = ev.passIdx; okInPass = 0; }
+        const team = teamById[ev.teamId];
+        if (ev.correct) {
+          okInPass++;
+          rows.push(`<li><span class="ev-ok">✓</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${esc(ev.matchedName)}</li>`);
+          if (okInPass === E.POSITIONS.length) rows.push(`<li class="run-line">🏃 Run scores!</li>`);
+        } else {
+          rows.push(`<li><span class="ev-bad">✗</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${ev.timedOut ? '(clock ran out)' : esc(ev.guess)} — out</li>`);
+        }
+      }
+      parts.push(`<div class="card replay-half">
+        <h3>${half === 'top' ? 'Top' : 'Bottom'} ${inning} — ${esc(batter.name)} (${h.runs} R, ${h.outs} out${h.outs === 1 ? '' : 's'}${h.done ? '' : ', in progress'})</h3>
+        <ul>${rows.join('')}</ul></div>`);
+    }
+  }
+  $('replays').innerHTML = parts.length
+    ? `<h2 style="margin:6px 0 10px;font-size:1.05rem;color:var(--cream-dim)">📋 Play-by-play</h2>${parts.reverse().join('')}`
+    : '';
+}
+
+// --- Boot ---------------------------------------------------------------------
+
+initHome();
+const urlCode = new URLSearchParams(location.search).get('game');
+if (urlCode && onlineEnabled) {
+  joinFlow(urlCode.toUpperCase());
+} else {
+  show('screen-home');
+}

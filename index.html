@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lineup Duel — Baseball Roster Trivia</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚾</text></svg>">
+</head>
+<body>
+  <header class="masthead">
+    <h1>⚾ Lineup Duel</h1>
+    <p class="tagline">Name the player. Score the run. Win the game.</p>
+  </header>
+
+  <main id="app">
+
+    <!-- Home -->
+    <section id="screen-home" class="screen">
+      <div class="card menu">
+        <button id="btn-local" class="big-btn">🪑 Pass &amp; Play <span class="sub">two players, one device</span></button>
+        <button id="btn-create" class="big-btn">🌐 Create Online Game <span class="sub">play from anywhere, share a link</span></button>
+        <div class="join-row">
+          <input id="join-code" type="text" placeholder="GAME CODE" maxlength="6" autocapitalize="characters" autocomplete="off">
+          <button id="btn-join" class="big-btn slim">Join</button>
+        </div>
+        <p id="online-hint" class="hint hidden">Online play isn't set up yet — see the README for the 5-minute Firebase setup. Pass &amp; Play works right now.</p>
+        <button id="btn-resume" class="link-btn hidden">Resume game in progress →</button>
+      </div>
+      <div class="card rules">
+        <h2>How it works</h2>
+        <ul>
+          <li><strong>3 innings</strong>, head to head. One of you is randomly the home team.</li>
+          <li>Each at-bat you get a <strong>team + position</strong> (P, C, 1B, 2B, 3B, SS, LF, CF, RF, in order). Name any current player at that spot.</li>
+          <li>Get all 9 in a row: that's a <strong>run</strong>, and a fresh lineup starts.</li>
+          <li>Miss one (or run out the 25-second clock): that's an <strong>out</strong>, back to the top of a new lineup. 3 outs (or 3 runs) ends your half.</li>
+          <li>Both players face the <strong>same teams</strong> each inning — so no peeking at the other half until you've batted!</li>
+          <li>Tied after 3? <strong>Extra innings.</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Name entry -->
+    <section id="screen-names" class="screen hidden">
+      <div class="card">
+        <h2 id="names-title">Who's playing?</h2>
+        <div id="name-fields">
+          <label>Player 1 <input id="name1" type="text" maxlength="20" placeholder="e.g. Chris"></label>
+          <label id="name2-label">Player 2 <input id="name2" type="text" maxlength="20" placeholder="e.g. Dad"></label>
+        </div>
+        <p id="names-error" class="error hidden"></p>
+        <button id="btn-start" class="big-btn">Play Ball!</button>
+        <button class="link-btn btn-home">← Back</button>
+      </div>
+    </section>
+
+    <!-- Lobby: waiting for opponent to join (online) -->
+    <section id="screen-lobby" class="screen hidden">
+      <div class="card center">
+        <h2>Game created!</h2>
+        <p>Share this with your opponent:</p>
+        <p class="game-code" id="lobby-code"></p>
+        <p><input id="lobby-link" type="text" readonly></p>
+        <button id="btn-copy-link" class="big-btn slim">Copy Link</button>
+        <p class="hint">Waiting for them to join<span class="dots">…</span></p>
+        <button class="link-btn btn-home">← Back to menu</button>
+      </div>
+    </section>
+
+    <!-- Main game -->
+    <section id="screen-game" class="screen hidden">
+      <div id="scoreboard" class="scoreboard"></div>
+      <div id="game-content"></div>
+      <div id="replays"></div>
+      <p class="center"><button class="link-btn btn-home" id="btn-quit">← Menu</button></p>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Rosters live from the <a href="https://statsapi.mlb.com" target="_blank" rel="noopener">MLB Stats API</a>. Built for fun.</p>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
