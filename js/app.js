@@ -113,6 +113,7 @@ async function startFromNames(joinCode) {
       $('btn-start').disabled = true;
       G = E.newGame({ mode: 'online', names: [n1, ''], season: SEASON });
       G.status = 'lobby';
+      G.players[1].name = ''; // empty slot signals "joinable" (newGame defaults it)
       gameCode = newGameCode();
       myIdx = 0;
       await OnlineStore.create(gameCode, G);

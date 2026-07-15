@@ -1,17 +1,11 @@
-// To enable online play, create a (free) Firebase project, add a Web App,
-// enable Cloud Firestore, and paste the config object it gives you here.
-// See README.md for step-by-step instructions.
-//
-// Leave as null to run in pass-and-play (one device) mode only.
+// Firebase project config for online play. This is a public client config
+// (not a secret) — access is governed by Firestore security rules.
 
-export const firebaseConfig = null;
-
-// Example of what it looks like when filled in:
-// export const firebaseConfig = {
-//   apiKey: "AIzaSy...",
-//   authDomain: "your-project.firebaseapp.com",
-//   projectId: "your-project",
-//   storageBucket: "your-project.appspot.com",
-//   messagingSenderId: "1234567890",
-//   appId: "1:1234567890:web:abc123",
-// };
+export const firebaseConfig = {
+  apiKey: "AIzaSyABOF0bolCLVTHpBETVsLakgs__oICbgww",
+  authDomain: "baseballtrivia.firebaseapp.com",
+  projectId: "baseballtrivia",
+  storageBucket: "baseballtrivia.firebasestorage.app",
+  messagingSenderId: "727617495861",
+  appId: "1:727617495861:web:c29ea62f4655e92c39e27c",
+};
