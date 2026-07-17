@@ -1,7 +1,7 @@
 import * as E from './engine.js';
 import * as MLB from './mlb.js';
 import { findMatch } from './fuzzy.js';
-import { LocalStore, OnlineStore, onlineEnabled, newGameCode, myIdentity, saveIdentity, rememberGame, knownGames } from './store.js';
+import { LocalStore, OnlineStore, onlineEnabled, newGameCode, myIdentity, saveIdentity, forgetIdentity, rememberGame, knownGames } from './store.js';
 
 // --- App state --------------------------------------------------------------
 
@@ -189,34 +189,46 @@ function showLobby() {
 async function joinFlow(code) {
   const id = myIdentity(code);
   if (id) return enterOnlineGame(code, id.playerIdx);
-  // No identity on this device: look at the game to decide between joining
-  // the open seat and reclaiming an existing one (new phone, cleared cache).
+  // No identity on this device: ask who they are. Named seats can be
+  // reclaimed (new phone, cleared cache); an open seat can be joined.
   let game = null;
   try { game = await OnlineStore.load(code); } catch { /* fall through */ }
   if (!game || !game.players) { alert('No game found with that code.'); return goHome(); }
-  if (!game.players[1].name) return showNames('online-join', code);
   showClaim(code, game);
 }
 
 function showClaim(code, game) {
-  $('claim-title').textContent =
-    `Game ${code}: ${game.players[0].name} vs ${game.players[1].name}`;
-  $('claim-buttons').innerHTML = game.players.map((p, i) =>
-    `<button class="big-btn" data-idx="${i}">I'm ${esc(p.name)}</button>`).join('');
-  document.querySelectorAll('#claim-buttons button').forEach(b => {
+  const named = game.players.map((p, i) => ({ p, i })).filter(x => x.p.name);
+  $('claim-title').textContent = named.length === 2
+    ? `Game ${code}: ${named[0].p.name} vs ${named[1].p.name}`
+    : `Game ${code}, started by ${named[0].p.name}`;
+  $('claim-buttons').innerHTML =
+    named.map(x => `<button class="big-btn" data-idx="${x.i}">I'm ${esc(x.p.name)}</button>`).join('') +
+    (named.length < 2
+      ? `<button class="big-btn" id="btn-claim-join">I'm new here — join as ${esc(named[0].p.name)}'s opponent</button>`
+      : '');
+  document.querySelectorAll('#claim-buttons button[data-idx]').forEach(b => {
     b.onclick = () => {
       saveIdentity(code, Number(b.dataset.idx));
       enterOnlineGame(code, Number(b.dataset.idx));
     };
   });
+  const joinBtn = $('btn-claim-join');
+  if (joinBtn) joinBtn.onclick = () => showNames('online-join', code);
   show('screen-claim');
 }
 
 async function enterOnlineGame(code, playerIdx) {
-  gameCode = code;
-  myIdx = playerIdx;
   const game = await OnlineStore.load(code);
   if (!game) { alert('No game found with that code.'); return goHome(); }
+  // Stale identity: this device claims a seat that's since been vacated
+  // (e.g. an accidental join was undone). Forget it and ask again.
+  if (!game.players[playerIdx]?.name) {
+    forgetIdentity(code);
+    return joinFlow(code);
+  }
+  gameCode = code;
+  myIdx = playerIdx;
   G = game;
   rememberGame(code, G);
   history.replaceState(null, '', `?game=${code}`);

@@ -65,6 +65,11 @@ export function saveIdentity(code, playerIdx) {
   localStorage.setItem(`bt_id_${code}`, val);
 }
 
+export function forgetIdentity(code) {
+  sessionStorage.removeItem(`bt_id_${code}`);
+  localStorage.removeItem(`bt_id_${code}`);
+}
+
 // Registry of games this device has been part of, for the home-page list.
 export function rememberGame(code, game) {
   try {
