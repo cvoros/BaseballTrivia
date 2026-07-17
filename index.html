@@ -27,6 +27,7 @@
         <p id="online-hint" class="hint hidden">Online play isn't set up yet — see the README for the 5-minute Firebase setup. Pass &amp; Play works right now.</p>
         <button id="btn-resume" class="link-btn hidden">Resume game in progress →</button>
       </div>
+      <div id="game-list"></div>
       <div class="card rules">
         <h2>How it works</h2>
         <ul>
@@ -37,6 +38,17 @@
           <li>Both players face the <strong>same teams</strong> each inning — so no peeking at the other half until you've batted!</li>
           <li>Tied after 3? <strong>Extra innings.</strong></li>
         </ul>
+      </div>
+    </section>
+
+    <!-- Claim a seat: this device doesn't know which player you are -->
+    <section id="screen-claim" class="screen hidden">
+      <div class="card center">
+        <h2>Who are you?</h2>
+        <p id="claim-title" class="hint"></p>
+        <div id="claim-buttons"></div>
+        <p class="hint">Pick your name to get back into the game on this device.</p>
+        <button class="link-btn btn-home">← Back</button>
       </div>
     </section>
 

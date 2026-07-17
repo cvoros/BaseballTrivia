@@ -1,7 +1,7 @@
 import * as E from './engine.js';
 import * as MLB from './mlb.js';
 import { findMatch } from './fuzzy.js';
-import { LocalStore, OnlineStore, onlineEnabled, newGameCode, myIdentity, saveIdentity } from './store.js';
+import { LocalStore, OnlineStore, onlineEnabled, newGameCode, myIdentity, saveIdentity, rememberGame, knownGames } from './store.js';
 
 // --- App state --------------------------------------------------------------
 
@@ -22,7 +22,7 @@ const SEASON = (() => {
 })();
 
 const $ = id => document.getElementById(id);
-const screens = ['screen-home', 'screen-names', 'screen-lobby', 'screen-game'];
+const screens = ['screen-home', 'screen-claim', 'screen-names', 'screen-lobby', 'screen-game'];
 
 function show(id) {
   for (const s of screens) $(s).classList.toggle('hidden', s !== id);
@@ -73,6 +73,36 @@ function initHome() {
     $('btn-resume').onclick = () => resumeLocal(resumable);
   }
   document.querySelectorAll('.btn-home').forEach(b => (b.onclick = goHome));
+  renderGameList();
+}
+
+// Home-page list of this device's online games, with live "your move" badges.
+function renderGameList() {
+  const el = $('game-list');
+  if (!onlineEnabled) { el.innerHTML = ''; return; }
+  const games = knownGames().filter(g => myIdentity(g.code)).slice(0, 8);
+  if (!games.length) { el.innerHTML = ''; return; }
+  el.innerHTML = '<h2 class="list-title">Your games</h2>' +
+    games.map(g => `
+      <button class="game-item" data-code="${esc(g.code)}">
+        <span>${esc(g.names[0] || '?')} vs ${esc(g.names[1] || '(waiting)')} · ${esc(g.code)}</span>
+        <span class="gstatus" id="gstatus-${esc(g.code)}">…</span>
+      </button>`).join('');
+  el.querySelectorAll('.game-item').forEach(b => (b.onclick = () => joinFlow(b.dataset.code)));
+  for (const g of games) refreshGameBadge(g.code);
+}
+
+async function refreshGameBadge(code) {
+  try {
+    const game = await OnlineStore.load(code);
+    const el = $(`gstatus-${code}`);
+    if (!el || !game) return;
+    const idx = myIdentity(code)?.playerIdx;
+    if (game.status === 'final') el.textContent = 'Finished';
+    else if (game.status === 'lobby') el.textContent = 'Waiting for opponent';
+    else if (E.batterIdx(game) === idx) { el.textContent = '▶ Your move'; el.classList.add('yourmove'); }
+    else el.textContent = 'Their move';
+  } catch { /* offline — leave the placeholder */ }
 }
 
 function goHome() {
@@ -118,6 +148,7 @@ async function startFromNames(joinCode) {
       myIdx = 0;
       await OnlineStore.create(gameCode, G);
       saveIdentity(gameCode, 0);
+      rememberGame(gameCode, G);
       history.replaceState(null, '', `?game=${gameCode}`);
       showLobby();
       await subscribeOnline();
@@ -127,6 +158,7 @@ async function startFromNames(joinCode) {
       gameCode = joinCode;
       myIdx = 1;
       saveIdentity(joinCode, 1);
+      rememberGame(joinCode, G);
       history.replaceState(null, '', `?game=${joinCode}`);
       await subscribeOnline();
       enterGame();
@@ -156,18 +188,40 @@ function showLobby() {
 
 async function joinFlow(code) {
   const id = myIdentity(code);
-  if (id) {
-    // Returning player on this browser: just reconnect.
-    gameCode = code;
-    myIdx = id.playerIdx;
-    const game = await OnlineStore.load(code);
-    if (!game) return alert('No game found with that code.');
-    G = game;
-    await subscribeOnline();
-    if (G.status === 'lobby') showLobby(); else enterGame();
-  } else {
-    showNames('online-join', code);
-  }
+  if (id) return enterOnlineGame(code, id.playerIdx);
+  // No identity on this device: look at the game to decide between joining
+  // the open seat and reclaiming an existing one (new phone, cleared cache).
+  let game = null;
+  try { game = await OnlineStore.load(code); } catch { /* fall through */ }
+  if (!game || !game.players) { alert('No game found with that code.'); return goHome(); }
+  if (!game.players[1].name) return showNames('online-join', code);
+  showClaim(code, game);
+}
+
+function showClaim(code, game) {
+  $('claim-title').textContent =
+    `Game ${code}: ${game.players[0].name} vs ${game.players[1].name}`;
+  $('claim-buttons').innerHTML = game.players.map((p, i) =>
+    `<button class="big-btn" data-idx="${i}">I'm ${esc(p.name)}</button>`).join('');
+  document.querySelectorAll('#claim-buttons button').forEach(b => {
+    b.onclick = () => {
+      saveIdentity(code, Number(b.dataset.idx));
+      enterOnlineGame(code, Number(b.dataset.idx));
+    };
+  });
+  show('screen-claim');
+}
+
+async function enterOnlineGame(code, playerIdx) {
+  gameCode = code;
+  myIdx = playerIdx;
+  const game = await OnlineStore.load(code);
+  if (!game) { alert('No game found with that code.'); return goHome(); }
+  G = game;
+  rememberGame(code, G);
+  history.replaceState(null, '', `?game=${code}`);
+  await subscribeOnline();
+  if (G.status === 'lobby') showLobby(); else enterGame();
 }
 
 async function subscribeOnline() {
@@ -177,6 +231,7 @@ async function subscribeOnline() {
     if (!changed) return;
     const wasLobby = G?.status === 'lobby';
     G = remote;
+    rememberGame(gameCode, G);
     if (wasLobby && G.status !== 'lobby') enterGame();
     else if (!$('screen-game').classList.contains('hidden')) renderGame();
     else if (G.status !== 'lobby') enterGame();

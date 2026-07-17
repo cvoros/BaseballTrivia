@@ -46,9 +46,13 @@ export function newGameCode() {
   return code;
 }
 
-// Per-browser identity for a given game code.
+// Per-browser identity for a given game code. sessionStorage wins so two
+// tabs in the same browser can play each other (handy for testing);
+// localStorage is the durable fallback across restarts.
 export function myIdentity(code) {
   try {
+    const s = sessionStorage.getItem(`bt_id_${code}`);
+    if (s) return JSON.parse(s);
     return JSON.parse(localStorage.getItem(`bt_id_${code}`));
   } catch {
     return null;
@@ -56,7 +60,33 @@ export function myIdentity(code) {
 }
 
 export function saveIdentity(code, playerIdx) {
-  localStorage.setItem(`bt_id_${code}`, JSON.stringify({ playerIdx }));
+  const val = JSON.stringify({ playerIdx });
+  sessionStorage.setItem(`bt_id_${code}`, val);
+  localStorage.setItem(`bt_id_${code}`, val);
+}
+
+// Registry of games this device has been part of, for the home-page list.
+export function rememberGame(code, game) {
+  try {
+    const all = JSON.parse(localStorage.getItem('bt_games') || '{}');
+    all[code] = {
+      names: game.players.map(p => p.name),
+      status: game.status,
+      updated: Date.now(),
+    };
+    localStorage.setItem('bt_games', JSON.stringify(all));
+  } catch { /* storage full/blocked: the list is a convenience only */ }
+}
+
+export function knownGames() {
+  try {
+    const all = JSON.parse(localStorage.getItem('bt_games') || '{}');
+    return Object.entries(all)
+      .map(([code, v]) => ({ code, ...v }))
+      .sort((a, b) => b.updated - a.updated);
+  } catch {
+    return [];
+  }
 }
 
 export const OnlineStore = {
