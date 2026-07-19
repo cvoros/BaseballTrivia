@@ -27,7 +27,14 @@ answers are always current — no stale trivia.
 - **C / 1B / 2B / 3B / SS** — any player listed at that position.
 - **LF / CF / RF** — any outfielder counts, regardless of which corner.
 - Players listed as pure **DH** count at 1B and OF slots.
-- Last names alone work ("Betts"), accents and small typos are forgiven.
+- Matching is forgiving: last names alone ("Betts"), first-initial + last
+  ("F Tatis"), suffixes optional ("Tatis Jr"), and spacing/punctuation/accents
+  ignored ("cj abrams", "de la cruz"), plus a typo budget that scales with
+  name length.
+- **Appeals**: a miss isn't final until you accept it. If the ump (the
+  matcher) blows the call, tap "Bad call, ump!" and it counts — honor system,
+  and the play-by-play shows your opponent exactly what you typed. The clock
+  can't be appealed.
 
 ## Play modes
 

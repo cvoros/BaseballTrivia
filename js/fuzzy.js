@@ -30,36 +30,41 @@ function levenshtein(a, b) {
   return prev[n];
 }
 
-// A guessed word matches a target word within a typo budget scaled to length.
-// Very short words must be exact so "Cruz" can't drift into "Ruiz".
-function wordMatches(guessWord, targetWord) {
-  if (guessWord === targetWord) return true;
-  if (targetWord.length <= 3) return false;
-  const budget = targetWord.length <= 5 ? 1 : 2;
-  return levenshtein(guessWord, targetWord) <= budget;
+// Space-insensitive fuzzy equality with a typo budget scaled to length.
+// Very short targets must be exact so "Cruz" can't drift into "Ruiz".
+function fuzzyEquals(guess, target) {
+  if (!guess || !target) return false;
+  if (guess === target) return true;
+  if (target.length <= 3) return false;
+  const budget = target.length <= 4 ? 1 : target.length <= 8 ? 2 : 3;
+  return levenshtein(guess, target) <= budget;
 }
 
 const SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
 
-// Candidate strings a guess may match: the full name, and the last-name group
-// (everything after the first word, suffixes stripped) so "Betts", "Tatis",
-// and "De La Cruz" all work.
-function candidatesFor(fullName) {
-  let words = normalize(fullName).split(' ').filter(Boolean);
+function significantWords(s) {
+  const words = normalize(s).split(' ').filter(Boolean);
   while (words.length > 1 && SUFFIXES.has(words[words.length - 1])) words.pop();
-  const cands = [words];
-  if (words.length > 1) cands.push(words.slice(1));
-  return cands;
+  return words;
 }
 
+// A guess counts if, ignoring spaces/punctuation/accents/suffixes, it lands
+// within typo distance of: the full name, the last-name group ("de la cruz"),
+// the plain last word, or first-initial + last name ("fTatis").
 export function guessMatchesName(guess, fullName) {
-  const guessWords = normalize(guess).split(' ').filter(Boolean);
-  if (!guessWords.length) return false;
-  for (const cand of candidatesFor(fullName)) {
-    if (cand.length !== guessWords.length) continue;
-    if (cand.every((w, i) => wordMatches(guessWords[i], w))) return true;
+  const g = significantWords(guess).join('');
+  if (!g) return false;
+  const words = significantWords(fullName);
+  const lastGroup = words.slice(1).join('');
+  const targets = [words.join('')];
+  if (words.length > 1) {
+    targets.push(lastGroup);
+    targets.push(words[words.length - 1]);
   }
-  return false;
+  if (targets.some(t => fuzzyEquals(g, t))) return true;
+  // First-initial + last name ("fTatis"): the initial must match exactly so a
+  // wrong short guess can't ride the typo budget into someone else's name.
+  return words.length > 1 && g[0] === words[0][0] && fuzzyEquals(g.slice(1), lastGroup);
 }
 
 // Returns the first player in `players` (objects with .fullName) the guess

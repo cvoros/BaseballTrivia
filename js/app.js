@@ -35,6 +35,15 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// Key-order-independent serialization. Firestore snapshots return the same
+// data with different key order than the local object, so JSON.stringify
+// comparison misfires and our own write echoes re-render mid-feedback.
+function stableStringify(o) {
+  if (o === null || typeof o !== 'object') return JSON.stringify(o);
+  if (Array.isArray(o)) return '[' + o.map(stableStringify).join(',') + ']';
+  return '{' + Object.keys(o).sort().map(k => JSON.stringify(k) + ':' + stableStringify(o[k])).join(',') + '}';
+}
+
 async function ensureTeams() {
   if (!teams) {
     teams = await MLB.getTeams(SEASON);
@@ -239,8 +248,11 @@ async function enterOnlineGame(code, playerIdx) {
 async function subscribeOnline() {
   if (unsubscribe) unsubscribe();
   unsubscribe = await OnlineStore.subscribe(gameCode, remote => {
-    const changed = JSON.stringify(remote) !== JSON.stringify(G);
+    const changed = stableStringify(remote) !== stableStringify(G);
     if (!changed) return;
+    // Never let a snapshot yank the screen away mid-at-bat: while I'm batting
+    // I'm the only writer, so anything differing here is stale/echo noise.
+    if (G?.status === 'active' && E.batterIdx(G) === myIdx) return;
     const wasLobby = G?.status === 'lobby';
     G = remote;
     rememberGame(gameCode, G);
@@ -409,16 +421,55 @@ async function renderQuestion() {
   $('btn-answer').onclick = submit;
   input.onkeydown = e => { if (e.key === 'Enter') submit(); };
 
+  let settled = false;
   function settle({ guess, timedOut }) {
+    if (settled) return; // double-click, Enter+click, or timer/submit race
+    settled = true;
+    stopTimer();
     const match = !timedOut && guess ? findMatch(guess, eligible) : null;
     const result = {
       teamId: q.teamId, pos: q.pos, guess: guess || '',
       correct: !!match, matchedName: match ? match.fullName : null, timedOut,
     };
+    if (result.correct || timedOut) {
+      E.applyResult(G, result);
+      save();
+      showFeedback(result, team, eligible);
+    } else {
+      // A miss isn't final until the batter accepts it: appeal process.
+      showOutDecision(result, team, eligible);
+    }
+  }
+}
+
+// The ump's call on a miss, with the appeal option (honor system, same as the
+// Jeopardy game): overridden answers are flagged in the play-by-play so your
+// opponent sees exactly what you claimed.
+function showOutDecision(result, team, eligible) {
+  renderScoreboard();
+  const answers = eligible.map(p => p.fullName);
+  const shown = answers.slice(0, 6);
+  $('game-content').innerHTML = `
+    <div class="card">
+      <div class="feedback bad">
+        <div class="verdict">✗ Out?</div>
+        <div class="detail">"${esc(result.guess)}" doesn't match anyone listed on the ${esc(team.name)} at ${result.pos}.</div>
+        <div class="detail">Listed there: ${shown.map(esc).join(', ')}${answers.length > shown.length ? '…' : ''}</div>
+      </div>
+      <button class="big-btn" id="btn-take-out">Fair call — take the out</button>
+      <button class="link-btn" id="btn-override">Bad call, ump! My answer names a real ${esc(team.teamName)} ${result.pos} — count it</button>
+    </div>`;
+  $('btn-take-out').onclick = () => {
     E.applyResult(G, result);
     save();
     showFeedback(result, team, eligible);
-  }
+  };
+  $('btn-override').onclick = () => {
+    const r = { ...result, correct: true, overridden: true };
+    E.applyResult(G, r);
+    save();
+    showFeedback(r, team, eligible);
+  };
 }
 
 function showFeedback(result, team, eligible) {
@@ -427,17 +478,20 @@ function showFeedback(result, team, eligible) {
   if (result.correct) {
     const completedPass = result.pos === 'RF';
     html = `<div class="feedback good">
-      <div class="verdict">✓ ${esc(result.matchedName)}</div>
+      <div class="verdict">✓ ${esc(result.matchedName || result.guess)}</div>
       ${completedPass ? '<div class="run-banner">🏃 RUN SCORES! Around the horn — all 9!</div>' : ''}
-      <div class="detail">${esc(result.guess)} — safe!</div>
+      <div class="detail">${result.overridden
+        ? 'Counted on appeal — your opponent will see this one in the play-by-play.'
+        : `${esc(result.guess)} — safe!`}</div>
     </div>`;
   } else {
     const answers = eligible.map(p => p.fullName);
     const shown = answers.slice(0, 6);
     html = `<div class="feedback bad">
       <div class="verdict">${result.timedOut ? '⏰ Called out on strikes!' : '✗ Out!'}</div>
-      <div class="detail">${result.timedOut ? 'Time expired.' : `"${esc(result.guess)}" isn't on the ${esc(team.name)} at ${result.pos}.`}</div>
+      <div class="detail">${result.timedOut ? 'Time expired — no appealing the clock.' : `"${esc(result.guess)}" isn't on the ${esc(team.name)} at ${result.pos}.`}</div>
       <div class="detail">You could've said: ${shown.map(esc).join(', ')}${answers.length > shown.length ? '…' : ''}</div>
+      ${G.status === 'active' && G.current.outs > 0 ? '<div class="detail">Next up: a fresh lineup from the top — Pitcher first.</div>' : ''}
     </div>`;
   }
 
@@ -510,7 +564,7 @@ function renderReplays() {
         const team = teamById[ev.teamId];
         if (ev.correct) {
           okInPass++;
-          rows.push(`<li><span class="ev-ok">✓</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${esc(ev.matchedName)}</li>`);
+          rows.push(`<li><span class="ev-ok">✓</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${esc(ev.matchedName || ev.guess)}${ev.overridden ? ' <em class="appealed">(overruled the ump)</em>' : ''}</li>`);
           if (okInPass === E.POSITIONS.length) rows.push(`<li class="run-line">🏃 Run scores!</li>`);
         } else {
           rows.push(`<li><span class="ev-bad">✗</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${ev.timedOut ? '(clock ran out)' : esc(ev.guess)} — out</li>`);
