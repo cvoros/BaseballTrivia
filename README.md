@@ -19,12 +19,16 @@ answers are always current — no stale trivia.
 - Both players face the **identical team sequence** each inning, so luck of
   the draw is equal. That's also why you shouldn't watch your opponent's half
   before playing your own — the app hides their play-by-play until you've batted.
+- Every inning includes the **Dodgers** and leans toward star-studded teams, so
+  there are always some gettable questions in the mix.
 - Tied after 3 innings → extra innings, walk-offs included.
 
 ### What counts as correct
 
-- **P** — any pitcher on the active roster (SP, RP, two-way).
-- **C / 1B / 2B / 3B / SS** — any player listed at that position.
+- Answers come from each team's **40-man roster**, so injured-list players
+  (e.g. Will Smith at Dodgers catcher) and depth pieces count too.
+- **P** — any pitcher on the roster (SP, RP, two-way).
+- **C / 1B / 2B / 3B / SS** — any player listed at that position on the roster.
 - **LF / CF / RF** — any outfielder counts, regardless of which corner.
 - Players listed as pure **DH** count at 1B and OF slots.
 - Matching is forgiving: last names alone ("Betts"), first-initial + last
@@ -87,6 +91,14 @@ use GitHub Pages or any local server, e.g. `npx serve`.)
 
 Free-tier limits (50k reads / 20k writes per day) are thousands of times more
 than two players can use.
+
+## Regenerating data / icons
+
+- `node tools/generate-star-teams.mjs [season]` refreshes `data/star-teams.json`
+  (which teams have the most current players who've ever been All-Stars — drives
+  the "favor star teams" difficulty aid). Re-run when rosters change.
+- The app icon lives in `tools/source-icon.png`; `apple-touch-icon.png`,
+  `icon-192.png`, `icon-512.png`, and `favicon-32.png` are resized from it.
 
 ## Ideas parked for v2
 

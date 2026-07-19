@@ -41,10 +41,13 @@ export async function getTeams(season) {
 }
 
 export async function getRoster(teamId, season) {
-  const key = `bt_roster_${teamId}_${season}`;
+  // 40Man (not active) so injured-list players like Will Smith still count;
+  // it also roughly doubles the acceptable-answer pool at every position.
+  // Key is versioned (v2) so stale cached 26-man rosters don't linger.
+  const key = `bt_roster_v2_${teamId}_${season}`;
   const cached = cacheGet(key);
   if (cached) return cached;
-  const res = await fetch(`${API}/teams/${teamId}/roster?rosterType=active&season=${season}`);
+  const res = await fetch(`${API}/teams/${teamId}/roster?rosterType=40Man&season=${season}`);
   if (!res.ok) throw new Error(`MLB API roster request failed (${res.status})`);
   const json = await res.json();
   const roster = (json.roster || []).map(r => ({

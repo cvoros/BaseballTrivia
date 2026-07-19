@@ -59,16 +59,54 @@ function shuffled(arr, rng) {
   return a;
 }
 
-// Deterministic passes for an inning: PASSES_PER_INNING passes of 9 team ids,
-// drawn from repeated shuffles of the full team list so no team repeats until
-// the deck runs out. Both players derive the identical schedule from the seed.
-export function buildPasses(seed, inning, teamIds) {
+export const FAVORITE_TEAM_ID = 119; // Dodgers — always in the mix (issue #3)
+const MARQUEE_WEIGHT = 2;            // star-studded teams appear ~2x as often
+
+// Pick `count` distinct ids from `pool` with probability proportional to
+// weight (default 1). Deterministic given rng. Sampling without replacement.
+function weightedSampleDistinct(pool, weightOf, count, rng) {
+  const remaining = pool.slice();
+  const picked = [];
+  while (picked.length < count && remaining.length) {
+    let total = 0;
+    for (const id of remaining) total += weightOf(id);
+    let r = rng() * total;
+    let idx = 0;
+    for (; idx < remaining.length; idx++) {
+      r -= weightOf(remaining[idx]);
+      if (r <= 0) break;
+    }
+    if (idx >= remaining.length) idx = remaining.length - 1;
+    picked.push(remaining[idx]);
+    remaining.splice(idx, 1);
+  }
+  return picked;
+}
+
+// Deterministic passes for an inning: PASSES_PER_INNING passes of 9 distinct
+// team ids. Both players derive the identical schedule from the seed, so the
+// matchup stays fair. Each pass guarantees the favorite team (Dodgers) and
+// leans toward marquee/star-studded teams, so the questions are more gettable.
+// `opts.marquee` is a Set of team ids; `opts.favoriteId` overrides the default.
+export function buildPasses(seed, inning, teamIds, opts = {}) {
+  const marquee = opts.marquee || new Set();
+  const favoriteId = opts.favoriteId ?? FAVORITE_TEAM_ID;
+  const hasFavorite = teamIds.includes(favoriteId);
+  const weightOf = id => (marquee.has(id) ? MARQUEE_WEIGHT : 1);
   const rng = mulberry32((seed ^ (inning * 0x9e3779b9)) >>> 0);
+
   const passes = [];
-  let deck = [];
   for (let p = 0; p < PASSES_PER_INNING; p++) {
-    if (deck.length < POSITIONS.length) deck = deck.concat(shuffled(teamIds, rng));
-    passes.push(deck.splice(0, POSITIONS.length));
+    const need = POSITIONS.length;
+    let pass;
+    if (hasFavorite) {
+      const others = weightedSampleDistinct(
+        teamIds.filter(id => id !== favoriteId), weightOf, need - 1, rng);
+      pass = shuffled([favoriteId, ...others], rng);
+    } else {
+      pass = weightedSampleDistinct(teamIds, weightOf, need, rng);
+    }
+    passes.push(pass);
   }
   return passes;
 }
@@ -80,6 +118,7 @@ export function newGame({ mode, names, season }) {
     version: 1,
     mode, // 'local' | 'online'
     season,
+    favoriteId: FAVORITE_TEAM_ID,
     seed: (Math.random() * 0xffffffff) >>> 0,
     players: [{ name: names[0] || 'Player 1' }, { name: names[1] || 'Player 2' }],
     awayIdx: Math.random() < 0.5 ? 0 : 1,
@@ -98,9 +137,9 @@ export function batterIdx(game) {
   return half === 'top' ? game.awayIdx : 1 - game.awayIdx;
 }
 
-export function currentQuestion(game, teamIds) {
+export function currentQuestion(game, teamIds, opts) {
   const { inning, passIdx, posIdx } = game.current;
-  const passes = buildPasses(game.seed, inning, teamIds);
+  const passes = buildPasses(game.seed, inning, teamIds, opts);
   return { teamId: passes[passIdx][posIdx], pos: POSITIONS[posIdx] };
 }
 

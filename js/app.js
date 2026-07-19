@@ -11,6 +11,7 @@ let myIdx = null;          // my player index online (null for local hot-seat)
 let unsubscribe = null;
 let teams = null;          // [{id, name, teamName}] sorted by id
 let teamById = {};
+let marqueeSet = new Set(); // star-studded team ids (issue #3 difficulty aid)
 let handoffDone = null;    // half key confirmed via handoff screen (local mode)
 let timerHandle = null;
 let pendingMode = null;    // which mode the names screen is collecting for
@@ -48,8 +49,17 @@ async function ensureTeams() {
   if (!teams) {
     teams = await MLB.getTeams(SEASON);
     teamById = Object.fromEntries(teams.map(t => [t.id, t]));
+    try {
+      const star = await (await fetch('data/star-teams.json')).json();
+      marqueeSet = new Set((star.marquee || []).map(Number));
+    } catch { marqueeSet = new Set(); } // no star data → uniform team odds
   }
   return teams;
+}
+
+// Options that make team selection favor the Dodgers + marquee teams.
+function questionOpts() {
+  return { marquee: marqueeSet, favoriteId: G?.favoriteId };
 }
 
 function stopTimer() {
@@ -360,7 +370,7 @@ function renderWaiting() {
 }
 
 async function renderQuestion() {
-  const q = E.currentQuestion(G, teams.map(t => t.id));
+  const q = E.currentQuestion(G, teams.map(t => t.id), questionOpts());
   const team = teamById[q.teamId];
   const cur = G.current;
 
