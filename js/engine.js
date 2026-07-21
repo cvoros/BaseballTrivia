@@ -83,17 +83,21 @@ function weightedSampleDistinct(pool, weightOf, count, rng) {
   return picked;
 }
 
-// Deterministic passes for an inning: PASSES_PER_INNING passes of 9 distinct
-// team ids. Both players derive the identical schedule from the seed, so the
-// matchup stays fair. Each pass guarantees the favorite team (Dodgers) and
-// leans toward marquee/star-studded teams, so the questions are more gettable.
+// Deterministic passes for one HALF-inning: PASSES_PER_INNING passes of 9
+// distinct team ids. Each half gets its own sequence (`opts.half` salts the
+// seed), so the two players never see the same teams — that's what lets the
+// play-by-play be shown live without spoiling anything. Still seeded, so both
+// devices agree on what the batter is being asked.
+// Each pass guarantees the favorite team (Dodgers) and leans toward marquee
+// teams, so the questions are more gettable.
 // `opts.marquee` is a Set of team ids; `opts.favoriteId` overrides the default.
 export function buildPasses(seed, inning, teamIds, opts = {}) {
   const marquee = opts.marquee || new Set();
   const favoriteId = opts.favoriteId ?? FAVORITE_TEAM_ID;
   const hasFavorite = teamIds.includes(favoriteId);
   const weightOf = id => (marquee.has(id) ? MARQUEE_WEIGHT : 1);
-  const rng = mulberry32((seed ^ (inning * 0x9e3779b9)) >>> 0);
+  const halfSalt = opts.half === 'bottom' ? 0x85ebca6b : 0;
+  const rng = mulberry32((seed ^ (inning * 0x9e3779b9) ^ halfSalt) >>> 0);
 
   const passes = [];
   for (let p = 0; p < PASSES_PER_INNING; p++) {
@@ -138,8 +142,8 @@ export function batterIdx(game) {
 }
 
 export function currentQuestion(game, teamIds, opts) {
-  const { inning, passIdx, posIdx } = game.current;
-  const passes = buildPasses(game.seed, inning, teamIds, opts);
+  const { inning, half, passIdx, posIdx } = game.current;
+  const passes = buildPasses(game.seed, inning, teamIds, { ...opts, half });
   return { teamId: passes[passIdx][posIdx], pos: POSITIONS[posIdx] };
 }
 

@@ -353,7 +353,7 @@ function renderHandoff(hk) {
     <div class="card handoff">
       <h2>${half} of inning ${G.current.inning}</h2>
       <p><strong>${esc(batter.name)}</strong>, you're up!<br>
-      Other player: no peeking — same teams both halves. 👀</p>
+      Your own set of teams — nothing your opponent saw will help you here.</p>
       <button class="big-btn" id="btn-handoff">I'm ${esc(batter.name)} — Play Ball</button>
     </div>`;
   $('btn-handoff').onclick = () => { handoffDone = hk; renderGame(); };
@@ -364,8 +364,8 @@ function renderWaiting() {
   $('game-content').innerHTML = `
     <div class="card handoff">
       <h2>${esc(opp.name)} is at bat<span class="dots"></span></h2>
-      <p>This page updates automatically when it's your turn.<br>
-      Come back whenever — the game keeps.</p>
+      <p>Follow their at-bats live in the play-by-play below.<br>
+      This page updates automatically when it's your turn — come back whenever.</p>
     </div>`;
 }
 
@@ -551,21 +551,10 @@ function renderFinal() {
   };
 }
 
-// Show play-by-play for halves the viewer is allowed to see:
-// your own halves anytime; opponent's half of inning N only once your half of
-// inning N is done (mirrored teams would leak answers otherwise). In local
-// mode, only fully completed innings (plus everything once final).
+// Every half is visible to both players, live — each half-inning draws its own
+// teams, so watching your opponent's at-bats can't give away your own answers.
 function canViewHalf(inning, half) {
-  if (G.status === 'final') return true;
-  const hk = E.halfKey(inning, half);
-  const h = G.halves[hk];
-  if (!h) return false;
-  const halfBatter = half === 'top' ? G.awayIdx : 1 - G.awayIdx;
-  const otherKey = E.halfKey(inning, half === 'top' ? 'bottom' : 'top');
-  const bothDone = h.done && G.halves[otherKey]?.done;
-  if (G.mode === 'local') return bothDone;
-  if (halfBatter === myIdx) return true;
-  return bothDone || (G.halves[otherKey]?.done ?? false);
+  return !!G.halves[E.halfKey(inning, half)];
 }
 
 function renderReplays() {

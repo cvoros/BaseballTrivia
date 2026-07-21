@@ -19,9 +19,9 @@ answers are always current — no stale trivia.
   batting — a miss never sends you back to the top.
 - **3 outs or 3 runs** ends your half. (No run is credited on the play that
   makes the third out.)
-- Both players face the **identical team sequence** each inning, so luck of
-  the draw is equal. That's also why you shouldn't watch your opponent's half
-  before playing your own — the app hides their play-by-play until you've batted.
+- Each half-inning draws its **own set of teams**, so your opponent's answers
+  can never give away yours. That means the play-by-play is visible to both of
+  you **live** — you can follow their half like a gameday feed while they play.
 - Every inning includes the **Dodgers** and leans toward star-studded teams, so
   there are always some gettable questions in the mix.
 - Tied after 3 innings → extra innings, walk-offs included.
