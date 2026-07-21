@@ -155,6 +155,7 @@ label input { margin-top: 4px; }
   background: rgba(255,255,255,.08); color: var(--cream-dim);
 }
 .q-progress .pos-dot.done { background: var(--good); color: #fff; }
+.q-progress .pos-dot.out { background: var(--bad); color: #fff; }
 .q-progress .pos-dot.now { background: var(--bulb); color: #222; font-weight: bold; }
 
 .timer-track {

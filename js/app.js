@@ -373,11 +373,17 @@ async function renderQuestion() {
   const q = E.currentQuestion(G, teams.map(t => t.id), questionOpts());
   const team = teamById[q.teamId];
   const cur = G.current;
+  // Results so far in this trip through the order, for the progress dots.
+  const passEvents = (G.halves[E.halfKey(cur.inning, cur.half)]?.events || [])
+    .filter(e => e.passIdx === cur.passIdx);
 
   $('game-content').innerHTML = `
     <div class="card question-card">
-      <div class="q-progress">${E.POSITIONS.map((p, i) =>
-        `<div class="pos-dot ${i < cur.posIdx ? 'done' : i === cur.posIdx ? 'now' : ''}">${p}</div>`).join('')}
+      <div class="q-progress">${E.POSITIONS.map((p, i) => {
+        const ev = passEvents[i];
+        const cls = i === cur.posIdx ? 'now' : i < cur.posIdx ? (ev && !ev.correct ? 'out' : 'done') : '';
+        return `<div class="pos-dot ${cls}">${p}</div>`;
+      }).join('')}
       </div>
       <div class="q-team">
         <img src="${MLB.teamLogoUrl(q.teamId)}" alt="" onerror="this.style.display='none'">
@@ -442,9 +448,7 @@ async function renderQuestion() {
       correct: !!match, matchedName: match ? match.fullName : null, timedOut,
     };
     if (result.correct || timedOut) {
-      E.applyResult(G, result);
-      save();
-      showFeedback(result, team, eligible);
+      commitResult(result, team, eligible);
     } else {
       // A miss isn't final until the batter accepts it: appeal process.
       showOutDecision(result, team, eligible);
@@ -469,30 +473,36 @@ function showOutDecision(result, team, eligible) {
       <button class="big-btn" id="btn-take-out">Fair call — take the out</button>
       <button class="link-btn" id="btn-override">Bad call, ump! My answer names a real ${esc(team.teamName)} ${result.pos} — count it</button>
     </div>`;
-  $('btn-take-out').onclick = () => {
-    E.applyResult(G, result);
-    save();
-    showFeedback(result, team, eligible);
-  };
-  $('btn-override').onclick = () => {
-    const r = { ...result, correct: true, overridden: true };
-    E.applyResult(G, r);
-    save();
-    showFeedback(r, team, eligible);
-  };
+  $('btn-take-out').onclick = () => commitResult(result, team, eligible);
+  $('btn-override').onclick = () =>
+    commitResult({ ...result, correct: true, overridden: true }, team, eligible);
 }
 
-function showFeedback(result, team, eligible) {
+// Apply an answer, persist it, and show the verdict. Reads the run count off
+// the half record (not game.current, which resets when a half ends) so a run
+// that ends the half is still detected.
+function commitResult(result, team, eligible) {
+  const hk = E.halfKey(G.current.inning, G.current.half);
+  const runsBefore = G.halves[hk]?.runs || 0;
+  E.applyResult(G, result);
+  save();
+  const scoredRun = (G.halves[hk]?.runs || 0) > runsBefore;
+  const halfEnded = G.status === 'final' || E.halfKey(G.current.inning, G.current.half) !== hk;
+  showFeedback(result, team, eligible, { scoredRun, halfEnded });
+}
+
+function showFeedback(result, team, eligible, { scoredRun, halfEnded }) {
   renderScoreboard();
+  const nextPos = E.POSITION_NAMES[E.POSITIONS[G.current.posIdx]];
   let html = '';
   if (result.correct) {
-    const completedPass = result.pos === 'RF';
     html = `<div class="feedback good">
       <div class="verdict">✓ ${esc(result.matchedName || result.guess)}</div>
-      ${completedPass ? '<div class="run-banner">🏃 RUN SCORES! Around the horn — all 9!</div>' : ''}
+      ${scoredRun ? '<div class="run-banner">🏃 RUN SCORES! You batted through the order!</div>' : ''}
       <div class="detail">${result.overridden
         ? 'Counted on appeal — your opponent will see this one in the play-by-play.'
         : `${esc(result.guess)} — safe!`}</div>
+      ${!scoredRun && !halfEnded ? `<div class="detail">Next up: ${esc(nextPos)}.</div>` : ''}
     </div>`;
   } else {
     const answers = eligible.map(p => p.fullName);
@@ -501,7 +511,8 @@ function showFeedback(result, team, eligible) {
       <div class="verdict">${result.timedOut ? '⏰ Called out on strikes!' : '✗ Out!'}</div>
       <div class="detail">${result.timedOut ? 'Time expired — no appealing the clock.' : `"${esc(result.guess)}" isn't on the ${esc(team.name)} at ${result.pos}.`}</div>
       <div class="detail">You could've said: ${shown.map(esc).join(', ')}${answers.length > shown.length ? '…' : ''}</div>
-      ${G.status === 'active' && G.current.outs > 0 ? '<div class="detail">Next up: a fresh lineup from the top — Pitcher first.</div>' : ''}
+      ${scoredRun ? '<div class="run-banner">🏃 RUN SCORES anyway — you batted through the order!</div>' : ''}
+      ${!halfEnded ? `<div class="detail">You stay in the order — next up: ${esc(nextPos)}.</div>` : ''}
     </div>`;
   }
 
@@ -568,16 +579,21 @@ function renderReplays() {
       const batter = G.players[half === 'top' ? G.awayIdx : 1 - G.awayIdx];
       const rows = [];
       let lastPass = -1;
-      let okInPass = 0;
+      let inPass = 0;    // batters faced in this trip through the order
+      let outs = 0;      // outs so far in the half (3 ends it, no run credited)
       for (const ev of h.events) {
-        if (ev.passIdx !== lastPass) { lastPass = ev.passIdx; okInPass = 0; }
+        if (ev.passIdx !== lastPass) { lastPass = ev.passIdx; inPass = 0; }
+        inPass++;
+        if (!ev.correct) outs++;
         const team = teamById[ev.teamId];
         if (ev.correct) {
-          okInPass++;
           rows.push(`<li><span class="ev-ok">✓</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${esc(ev.matchedName || ev.guess)}${ev.overridden ? ' <em class="appealed">(overruled the ump)</em>' : ''}</li>`);
-          if (okInPass === E.POSITIONS.length) rows.push(`<li class="run-line">🏃 Run scores!</li>`);
         } else {
           rows.push(`<li><span class="ev-bad">✗</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${ev.timedOut ? '(clock ran out)' : esc(ev.guess)} — out</li>`);
+        }
+        // Batting through all 9 scores — unless that batter made the third out.
+        if (inPass === E.POSITIONS.length && outs < E.MAX_OUTS) {
+          rows.push(`<li class="run-line">🏃 Run scores!</li>`);
         }
       }
       parts.push(`<div class="card replay-half">

@@ -167,26 +167,30 @@ export function applyResult(game, result) {
   const h = ensureHalf(game);
   h.events.push({ ...result, passIdx: cur.passIdx });
 
-  if (result.correct) {
-    cur.posIdx++;
-    if (cur.posIdx === POSITIONS.length) {
-      cur.runs++;
-      h.runs = cur.runs;
-      cur.posIdx = 0;
-      cur.passIdx++;
-      // Walk-off: home takes the lead in the bottom of inning 3+.
-      if (cur.half === 'bottom' && cur.inning >= REG_INNINGS) {
-        const t = runTotals(game);
-        if (t.home > t.away) return endHalf(game, h);
-      }
-      if (cur.runs === MAX_RUNS) return endHalf(game, h);
-    }
-  } else {
+  // A miss costs an out but does NOT restart the lineup: you always bat on to
+  // the next spot in the order. Batting through all 9 scores a run and turns
+  // the order over (fresh set of teams). Third out ends the half immediately,
+  // so no run is credited on the play that makes it.
+  if (!result.correct) {
     cur.outs++;
     h.outs = cur.outs;
+    cur.posIdx++;
+    if (cur.outs === MAX_OUTS) return endHalf(game, h);
+  } else {
+    cur.posIdx++;
+  }
+
+  if (cur.posIdx === POSITIONS.length) {
+    cur.runs++;
+    h.runs = cur.runs;
     cur.posIdx = 0;
     cur.passIdx++;
-    if (cur.outs === MAX_OUTS) return endHalf(game, h);
+    // Walk-off: home takes the lead in the bottom of inning 3+.
+    if (cur.half === 'bottom' && cur.inning >= REG_INNINGS) {
+      const t = runTotals(game);
+      if (t.home > t.away) return endHalf(game, h);
+    }
+    if (cur.runs === MAX_RUNS) return endHalf(game, h);
   }
   return game;
 }

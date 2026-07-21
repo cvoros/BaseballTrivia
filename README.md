@@ -13,9 +13,12 @@ answers are always current — no stale trivia.
 - Your half-inning: you're shown a **team + position**, in lineup order
   (P, C, 1B, 2B, 3B, SS, LF, CF, RF). Type any player at that spot on the
   team's active roster. Typos and missing accents are forgiven.
-- **All 9 correct in a row = 1 run**, then a fresh lineup starts.
-- **A miss or a 25-second timeout = 1 out** and the lineup resets.
-- **3 outs or 3 runs** ends your half.
+- **Batting through all 9 spots = 1 run**, then the order turns over with a
+  fresh set of teams.
+- **A miss or a 25-second timeout = 1 out**, but you stay in the order and keep
+  batting — a miss never sends you back to the top.
+- **3 outs or 3 runs** ends your half. (No run is credited on the play that
+  makes the third out.)
 - Both players face the **identical team sequence** each inning, so luck of
   the draw is equal. That's also why you shouldn't watch your opponent's half
   before playing your own — the app hides their play-by-play until you've batted.
