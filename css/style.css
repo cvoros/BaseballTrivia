@@ -158,8 +158,17 @@ label input { margin-top: 4px; }
 .q-progress .pos-dot.out { background: var(--bad); color: #fff; }
 .q-progress .pos-dot.now { background: var(--bulb); color: #222; font-weight: bold; }
 
+.count-row {
+  font-family: 'Courier New', monospace; color: var(--cream-dim);
+  font-size: .95rem; margin: 8px 0 2px; letter-spacing: 2px;
+}
+.count-row #strike-dots { color: var(--bad); letter-spacing: 3px; }
+
 .answer-row { display: flex; gap: 8px; margin-top: 6px; }
 .answer-row input { flex: 1; font-size: 1.1rem; }
+
+#strike-zone { margin-top: 10px; }
+.strike-msg { color: #ff9b97; font-size: .92rem; margin-bottom: 6px; }
 
 /* Feedback */
 .feedback { text-align: center; padding: 10px 0; }

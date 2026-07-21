@@ -384,10 +384,12 @@ async function renderQuestion() {
       </div>
       <div class="q-pos">${E.POSITION_NAMES[q.pos]} (${q.pos})</div>
       <div class="q-hint">${E.POSITION_HINTS[q.pos]}</div>
+      <div class="count-row">Strikes <span id="strike-dots">${'○'.repeat(E.MAX_STRIKES)}</span></div>
       <div class="answer-row">
         <input id="answer" type="text" placeholder="Player name…" autocomplete="off" autocorrect="off" spellcheck="false">
         <button class="big-btn slim" id="btn-answer">Swing</button>
       </div>
+      <div id="strike-zone"></div>
     </div>`;
 
   const input = $('answer');
@@ -414,21 +416,47 @@ async function renderQuestion() {
   $('btn-answer').onclick = submit;
   input.onkeydown = e => { if (e.key === 'Enter') submit(); };
 
+  // You get MAX_STRIKES swings at each spot in the order. Wrong guesses are
+  // strikes — the eligible names are NOT revealed until you actually strike
+  // out, or the remaining guesses would be worthless.
+  const attempts = [];
+  let strikes = 0;
   let settled = false;
+
   function settle({ guess }) {
     if (settled) return; // guard against double-click / Enter+click
-    settled = true;
     const match = guess ? findMatch(guess, eligible) : null;
     const result = {
       teamId: q.teamId, pos: q.pos, guess: guess || '',
       correct: !!match, matchedName: match ? match.fullName : null,
     };
+
     if (result.correct) {
-      commitResult(result, team, eligible);
-    } else {
-      // A miss isn't final until the batter accepts it: appeal process.
-      showOutDecision(result, team, eligible);
+      settled = true;
+      return commitResult({ ...result, attempts: [...attempts, guess] }, team, eligible);
     }
+
+    attempts.push(guess);
+    strikes++;
+    $('strike-dots').textContent = '●'.repeat(strikes) + '○'.repeat(E.MAX_STRIKES - strikes);
+
+    if (strikes >= E.MAX_STRIKES) {
+      settled = true;
+      // Strike three — now it's an out, and the appeal screen shows the answers.
+      return showOutDecision({ ...result, attempts: [...attempts] }, team, eligible);
+    }
+
+    const left = E.MAX_STRIKES - strikes;
+    $('strike-zone').innerHTML = `
+      <div class="strike-msg">✗ Strike ${strikes} — "${esc(guess)}" isn't a ${esc(team.teamName)} ${result.pos}.
+        ${left} swing${left === 1 ? '' : 's'} left.</div>
+      <button class="link-btn" id="btn-appeal-strike">Bad call, ump! — that's a real ${esc(team.teamName)} ${result.pos}, count it</button>`;
+    $('btn-appeal-strike').onclick = () => {
+      settled = true;
+      commitResult({ ...result, correct: true, overridden: true, attempts: [...attempts] }, team, eligible);
+    };
+    input.value = '';
+    input.focus();
   }
 }
 
@@ -438,16 +466,17 @@ async function renderQuestion() {
 function showOutDecision(result, team, eligible) {
   renderScoreboard();
   const answers = eligible.map(p => p.fullName);
-  const shown = answers.slice(0, 6);
+  const shown = answers.slice(0, 8);
+  const tries = (result.attempts || [result.guess]).filter(Boolean);
   $('game-content').innerHTML = `
     <div class="card">
       <div class="feedback bad">
-        <div class="verdict">✗ Out?</div>
-        <div class="detail">"${esc(result.guess)}" doesn't match anyone listed on the ${esc(team.name)} at ${result.pos}.</div>
+        <div class="verdict">✗ Strike ${E.MAX_STRIKES} — out?</div>
+        <div class="detail">Your swings: ${tries.map(g => `"${esc(g)}"`).join(', ')} — none match a ${esc(team.name)} ${result.pos}.</div>
         <div class="detail">Listed there: ${shown.map(esc).join(', ')}${answers.length > shown.length ? '…' : ''}</div>
       </div>
       <button class="big-btn" id="btn-take-out">Fair call — take the out</button>
-      <button class="link-btn" id="btn-override">Bad call, ump! My answer names a real ${esc(team.teamName)} ${result.pos} — count it</button>
+      <button class="link-btn" id="btn-override">Bad call, ump! One of my swings was a real ${esc(team.teamName)} ${result.pos} — count it</button>
     </div>`;
   $('btn-take-out').onclick = () => commitResult(result, team, eligible);
   $('btn-override').onclick = () =>

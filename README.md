@@ -15,8 +15,10 @@ answers are always current — no stale trivia.
   team's active roster. Typos and missing accents are forgiven.
 - **Batting through all 9 spots = 1 run**, then the order turns over with a
   fresh set of teams.
-- **A miss = 1 out**, but you stay in the order and keep batting — a miss never
-  sends you back to the top. There is no clock; take as long as you like.
+- **You get 3 swings at each spot.** Name any eligible player on any swing and
+  you advance. Miss all three and it's **1 out** — but you stay in the order and
+  keep batting; a miss never sends you back to the top. There is no clock; take
+  as long as you like.
 - **3 outs or 3 runs** ends your half. (No run is credited on the play that
   makes the third out.)
 - Each half-inning draws its **own set of teams**, so your opponent's answers

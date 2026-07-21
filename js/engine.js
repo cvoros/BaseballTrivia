@@ -32,6 +32,7 @@ export const POSITION_HINTS = {
   RF: 'Any outfielder (or DH) counts',
 };
 
+export const MAX_STRIKES = 3; // swings per spot in the order before it's an out
 export const REG_INNINGS = 3;
 export const MAX_OUTS = 3;
 export const MAX_RUNS = 3;
