@@ -35,6 +35,17 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// First + last initials of a player, e.g. "Will Smith" -> "W. S." Suffixes
+// (Jr., III) are dropped so the last initial is the surname's.
+function initialsOf(fullName) {
+  const suffixes = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
+  let parts = (fullName || '').split(/\s+/).filter(Boolean);
+  while (parts.length > 1 && suffixes.has(parts[parts.length - 1].toLowerCase().replace(/\./g, ''))) parts.pop();
+  if (!parts.length) return '?';
+  const first = parts[0][0], last = parts[parts.length - 1][0];
+  return parts.length === 1 ? `${first.toUpperCase()}.` : `${first.toUpperCase()}. ${last.toUpperCase()}.`;
+}
+
 // Key-order-independent serialization. Firestore snapshots return the same
 // data with different key order than the local object, so JSON.stringify
 // comparison misfires and our own write echoes re-render mid-feedback.
@@ -390,6 +401,9 @@ async function renderQuestion() {
         <button class="big-btn slim" id="btn-answer">Swing</button>
       </div>
       <div id="strike-zone"></div>
+      <div id="mound-visit-row">${E.canMoundVisit(G)
+        ? `<button class="link-btn" id="btn-mound-visit">🧢 Mound visit — get a player's initials (1 per inning)</button>`
+        : `<span class="mv-used">🧢 Mound visit used this inning</span>`}</div>
     </div>`;
 
   const input = $('answer');
@@ -415,6 +429,17 @@ async function renderQuestion() {
   };
   $('btn-answer').onclick = submit;
   input.onkeydown = e => { if (e.key === 'Enter') submit(); };
+
+  // Mound visit: reveal one eligible player's initials, once per half-inning.
+  const mvBtn = $('btn-mound-visit');
+  if (mvBtn) mvBtn.onclick = () => {
+    const p = eligible[Math.floor(Math.random() * eligible.length)];
+    E.useMoundVisit(G);
+    save();
+    $('mound-visit-row').innerHTML =
+      `<span class="mv-hint">🧢 The pitching coach says one of them is <strong>${esc(initialsOf(p.fullName))}</strong></span>`;
+    input.focus();
+  };
 
   // You get MAX_STRIKES swings at each spot in the order. Wrong guesses are
   // strikes — the eligible names are NOT revealed until you actually strike
@@ -450,7 +475,7 @@ async function renderQuestion() {
     $('strike-zone').innerHTML = `
       <div class="strike-msg">✗ Strike ${strikes} — "${esc(guess)}" isn't a ${esc(team.teamName)} ${result.pos}.
         ${left} swing${left === 1 ? '' : 's'} left.</div>
-      <button class="link-btn" id="btn-appeal-strike">Bad call, ump! — that's a real ${esc(team.teamName)} ${result.pos}, count it</button>`;
+      <button class="link-btn" id="btn-appeal-strike">📟 ABS Challenge — "${esc(guess)}" really is a ${esc(team.teamName)} ${result.pos}, count it</button>`;
     $('btn-appeal-strike').onclick = () => {
       settled = true;
       commitResult({ ...result, correct: true, overridden: true, attempts: [...attempts] }, team, eligible);
@@ -476,7 +501,7 @@ function showOutDecision(result, team, eligible) {
         <div class="detail">Listed there: ${shown.map(esc).join(', ')}${answers.length > shown.length ? '…' : ''}</div>
       </div>
       <button class="big-btn" id="btn-take-out">Fair call — take the out</button>
-      <button class="link-btn" id="btn-override">Bad call, ump! One of my swings was a real ${esc(team.teamName)} ${result.pos} — count it</button>
+      <button class="link-btn" id="btn-override">📟 ABS Challenge — one of my swings was a real ${esc(team.teamName)} ${result.pos}, count it</button>
     </div>`;
   $('btn-take-out').onclick = () => commitResult(result, team, eligible);
   $('btn-override').onclick = () =>
@@ -505,7 +530,7 @@ function showFeedback(result, team, eligible, { scoredRun, halfEnded }) {
       <div class="verdict">✓ ${esc(result.matchedName || result.guess)}</div>
       ${scoredRun ? '<div class="run-banner">🏃 RUN SCORES! You batted through the order!</div>' : ''}
       <div class="detail">${result.overridden
-        ? 'Counted on appeal — your opponent will see this one in the play-by-play.'
+        ? '📟 ABS Challenge upheld — the call is overturned, safe! Your opponent sees this in the play-by-play.'
         : `${esc(result.guess)} — safe!`}</div>
       ${!scoredRun && !halfEnded ? `<div class="detail">Next up: ${esc(nextPos)}.</div>` : ''}
     </div>`;
@@ -581,7 +606,7 @@ function renderReplays() {
         if (!ev.correct) outs++;
         const team = teamById[ev.teamId];
         if (ev.correct) {
-          rows.push(`<li><span class="ev-ok">✓</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${esc(ev.matchedName || ev.guess)}${ev.overridden ? ' <em class="appealed">(overruled the ump)</em>' : ''}</li>`);
+          rows.push(`<li><span class="ev-ok">✓</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${esc(ev.matchedName || ev.guess)}${ev.overridden ? ' <em class="appealed">(ABS challenge upheld)</em>' : ''}</li>`);
         } else {
           rows.push(`<li><span class="ev-bad">✗</span><span class="ev-what">${esc(team?.teamName || '?')} ${ev.pos}</span> ${ev.timedOut ? '(clock ran out)' : esc(ev.guess)} — out</li>`);
         }

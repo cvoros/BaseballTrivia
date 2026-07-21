@@ -32,7 +32,8 @@ export const POSITION_HINTS = {
   RF: 'Any outfielder (or DH) counts',
 };
 
-export const MAX_STRIKES = 3; // swings per spot in the order before it's an out
+export const MAX_STRIKES = 3;            // swings per spot before it's an out
+export const MOUND_VISITS_PER_INNING = 1; // initials hints per half-inning
 export const REG_INNINGS = 3;
 export const MAX_OUTS = 3;
 export const MAX_RUNS = 3;
@@ -162,6 +163,23 @@ function ensureHalf(game) {
     game.halves[key] = { events: [], outs: 0, runs: 0, done: false };
   }
   return game.halves[key];
+}
+
+// Mound visits: the batter gets MOUND_VISITS_PER_INNING initials hints during
+// their half-inning (tracked on the half record so it persists and syncs).
+export function moundVisitsUsed(game) {
+  const h = game.halves[halfKey(game.current.inning, game.current.half)];
+  return h?.moundVisits || 0;
+}
+
+export function canMoundVisit(game) {
+  return moundVisitsUsed(game) < MOUND_VISITS_PER_INNING;
+}
+
+export function useMoundVisit(game) {
+  const h = ensureHalf(game);
+  h.moundVisits = (h.moundVisits || 0) + 1;
+  return game;
 }
 
 // Apply one answered question. `result` = { teamId, pos, guess, correct,

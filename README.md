@@ -40,9 +40,11 @@ answers are always current — no stale trivia.
   ("F Tatis"), suffixes optional ("Tatis Jr"), and spacing/punctuation/accents
   ignored ("cj abrams", "de la cruz"), plus a typo budget that scales with
   name length.
-- **Appeals**: a miss isn't final until you accept it. If the ump (the
-  matcher) blows the call, tap "Bad call, ump!" and it counts — honor system,
-  and the play-by-play shows your opponent exactly what you typed.
+- **Mound Visit**: once per half-inning, tap it to reveal the initials of one
+  eligible player as a hint. You still have to produce the name.
+- **ABS Challenge**: a miss isn't final until you accept it. If the matcher
+  (the "robo-ump") blows the call, tap **ABS Challenge** and it counts — honor
+  system, and the play-by-play shows your opponent exactly what you typed.
 
 ## Play modes
 

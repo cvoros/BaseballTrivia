@@ -170,6 +170,11 @@ label input { margin-top: 4px; }
 #strike-zone { margin-top: 10px; }
 .strike-msg { color: #ff9b97; font-size: .92rem; margin-bottom: 6px; }
 
+#mound-visit-row { margin-top: 12px; min-height: 1.4em; }
+.mv-used { color: var(--cream-dim); font-size: .85rem; opacity: .7; }
+.mv-hint { color: var(--bulb); font-size: .95rem; }
+.mv-hint strong { font-size: 1.15rem; letter-spacing: 1px; }
+
 /* Feedback */
 .feedback { text-align: center; padding: 10px 0; }
 .feedback .verdict { font-size: 1.6rem; font-weight: bold; margin-bottom: 6px; }
