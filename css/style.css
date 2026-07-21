@@ -158,14 +158,6 @@ label input { margin-top: 4px; }
 .q-progress .pos-dot.out { background: var(--bad); color: #fff; }
 .q-progress .pos-dot.now { background: var(--bulb); color: #222; font-weight: bold; }
 
-.timer-track {
-  height: 10px; background: rgba(255,255,255,.12);
-  border-radius: 5px; overflow: hidden; margin: 12px 0;
-}
-.timer-bar { height: 100%; background: var(--good); width: 100%; border-radius: 5px; }
-.timer-bar.warn { background: var(--bulb); }
-.timer-bar.danger { background: var(--bad); }
-
 .answer-row { display: flex; gap: 8px; margin-top: 6px; }
 .answer-row input { flex: 1; font-size: 1.1rem; }
 

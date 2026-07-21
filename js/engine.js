@@ -35,7 +35,6 @@ export const POSITION_HINTS = {
 export const REG_INNINGS = 3;
 export const MAX_OUTS = 3;
 export const MAX_RUNS = 3;
-export const TIMER_SECONDS = 25;
 const PASSES_PER_INNING = MAX_OUTS + MAX_RUNS; // worst case
 
 // --- Seeded RNG (mulberry32) ---------------------------------------------

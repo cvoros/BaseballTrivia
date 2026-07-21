@@ -13,7 +13,6 @@ let teams = null;          // [{id, name, teamName}] sorted by id
 let teamById = {};
 let marqueeSet = new Set(); // star-studded team ids (issue #3 difficulty aid)
 let handoffDone = null;    // half key confirmed via handoff screen (local mode)
-let timerHandle = null;
 let pendingMode = null;    // which mode the names screen is collecting for
 
 const SEASON = (() => {
@@ -60,10 +59,6 @@ async function ensureTeams() {
 // Options that make team selection favor the Dodgers + marquee teams.
 function questionOpts() {
   return { marquee: marqueeSet, favoriteId: G?.favoriteId };
-}
-
-function stopTimer() {
-  if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
 }
 
 function save() {
@@ -125,7 +120,6 @@ async function refreshGameBadge(code) {
 }
 
 function goHome() {
-  stopTimer();
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   G = null; gameCode = null; myIdx = null; handoffDone = null;
   history.replaceState(null, '', location.pathname);
@@ -288,7 +282,6 @@ function enterGame() {
 // --- Rendering ----------------------------------------------------------------
 
 function renderGame() {
-  stopTimer();
   renderScoreboard();
   ensureTeams().then(() => {
     if (G.status === 'final') renderFinal();
@@ -391,7 +384,6 @@ async function renderQuestion() {
       </div>
       <div class="q-pos">${E.POSITION_NAMES[q.pos]} (${q.pos})</div>
       <div class="q-hint">${E.POSITION_HINTS[q.pos]}</div>
-      <div class="timer-track"><div class="timer-bar" id="timer-bar"></div></div>
       <div class="answer-row">
         <input id="answer" type="text" placeholder="Player name…" autocomplete="off" autocorrect="off" spellcheck="false">
         <button class="big-btn slim" id="btn-answer">Swing</button>
@@ -413,41 +405,25 @@ async function renderQuestion() {
   }
   const eligible = MLB.eligiblePlayers(roster, q.pos);
 
-  // Timer starts once the roster is ready (so slow networks don't eat clock).
-  const deadline = Date.now() + E.TIMER_SECONDS * 1000;
-  const bar = $('timer-bar');
-  stopTimer();
-  timerHandle = setInterval(() => {
-    const left = deadline - Date.now();
-    const frac = Math.max(0, left / (E.TIMER_SECONDS * 1000));
-    bar.style.width = `${frac * 100}%`;
-    bar.className = 'timer-bar' + (frac < 0.2 ? ' danger' : frac < 0.5 ? ' warn' : '');
-    if (left <= 0) {
-      stopTimer();
-      settle({ guess: input.value.trim(), timedOut: true });
-    }
-  }, 100);
-
+  // No clock — take as long as you like.
   const submit = () => {
     const guess = input.value.trim();
     if (!guess) return;
-    stopTimer();
     settle({ guess, timedOut: false });
   };
   $('btn-answer').onclick = submit;
   input.onkeydown = e => { if (e.key === 'Enter') submit(); };
 
   let settled = false;
-  function settle({ guess, timedOut }) {
-    if (settled) return; // double-click, Enter+click, or timer/submit race
+  function settle({ guess }) {
+    if (settled) return; // guard against double-click / Enter+click
     settled = true;
-    stopTimer();
-    const match = !timedOut && guess ? findMatch(guess, eligible) : null;
+    const match = guess ? findMatch(guess, eligible) : null;
     const result = {
       teamId: q.teamId, pos: q.pos, guess: guess || '',
-      correct: !!match, matchedName: match ? match.fullName : null, timedOut,
+      correct: !!match, matchedName: match ? match.fullName : null,
     };
-    if (result.correct || timedOut) {
+    if (result.correct) {
       commitResult(result, team, eligible);
     } else {
       // A miss isn't final until the batter accepts it: appeal process.
@@ -508,8 +484,8 @@ function showFeedback(result, team, eligible, { scoredRun, halfEnded }) {
     const answers = eligible.map(p => p.fullName);
     const shown = answers.slice(0, 6);
     html = `<div class="feedback bad">
-      <div class="verdict">${result.timedOut ? '⏰ Called out on strikes!' : '✗ Out!'}</div>
-      <div class="detail">${result.timedOut ? 'Time expired — no appealing the clock.' : `"${esc(result.guess)}" isn't on the ${esc(team.name)} at ${result.pos}.`}</div>
+      <div class="verdict">✗ Out!</div>
+      <div class="detail">"${esc(result.guess)}" isn't on the ${esc(team.name)} at ${result.pos}.</div>
       <div class="detail">You could've said: ${shown.map(esc).join(', ')}${answers.length > shown.length ? '…' : ''}</div>
       ${scoredRun ? '<div class="run-banner">🏃 RUN SCORES anyway — you batted through the order!</div>' : ''}
       ${!halfEnded ? `<div class="detail">You stay in the order — next up: ${esc(nextPos)}.</div>` : ''}

@@ -15,8 +15,8 @@ answers are always current — no stale trivia.
   team's active roster. Typos and missing accents are forgiven.
 - **Batting through all 9 spots = 1 run**, then the order turns over with a
   fresh set of teams.
-- **A miss or a 25-second timeout = 1 out**, but you stay in the order and keep
-  batting — a miss never sends you back to the top.
+- **A miss = 1 out**, but you stay in the order and keep batting — a miss never
+  sends you back to the top. There is no clock; take as long as you like.
 - **3 outs or 3 runs** ends your half. (No run is credited on the play that
   makes the third out.)
 - Each half-inning draws its **own set of teams**, so your opponent's answers
@@ -40,8 +40,7 @@ answers are always current — no stale trivia.
   name length.
 - **Appeals**: a miss isn't final until you accept it. If the ump (the
   matcher) blows the call, tap "Bad call, ump!" and it counts — honor system,
-  and the play-by-play shows your opponent exactly what you typed. The clock
-  can't be appealed.
+  and the play-by-play shows your opponent exactly what you typed.
 
 ## Play modes
 
